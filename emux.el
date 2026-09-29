@@ -176,12 +176,34 @@ Restituisci la struct `emux-host' selezionata.  Segnala un
     (cl-find name hosts :key #'emux-host-name :test #'string=)))
 
 ;;;; Connessione SSH
+(defcustom emux-ssh-term "xterm-256color"
+  "Tipo di terminale dichiarato ai server remoti nelle sessioni SSH.
+Se non-nil, emux avvia ssh tramite \"env TERM=VALORE\": il valore
+vale solo per il processo ssh, che lo comunica al server, mentre
+il terminale locale resta quello del backend.  Serve perché i
+backend usano spesso un tipo proprio (eat dichiara
+\"eat-truecolor\") la cui descrizione terminfo di norma non esiste
+sui server: programmi come htop falliscono con \"Error opening
+terminal\".
+
+Se nil, emux non tocca TERM e ssh trasmette quello impostato dal
+backend.  È la scelta giusta se sui server è installata la
+descrizione terminfo del backend, che ne conserva tutte le
+capacità (per eat, truecolor incluso)."
+  :type '(choice (string :tag "Tipo di terminale")
+                 (const :tag "Usa TERM di sistema" nil)))
+
 (defun emux--ssh-command (host &optional user identity-file)
   "Costruisci la riga di comando ssh per HOST, come lista di argomenti.
 HOST è una struct `emux-host'.  USER e IDENTITY-FILE, se non-nil,
 sono override one-shot che vincono sugli slot corrispondenti (la
 struct non viene modificata).  I valori a nil, da override o da
 slot, delegano la decisione a ssh.
+
+Se `emux-ssh-term' è non-nil, il comando è preceduto da
+\"env TERM=VALORE\": il tipo di terminale dichiarato al server
+vale solo per ssh.  In tal caso il primo elemento della lista è
+\"env\", non \"ssh\".
 
 Con `emux-use-system-ssh-config' a nil il comando include
 \"-F /dev/null\" e \"-o IdentitiesOnly=yes\": ssh ignora ogni file
@@ -195,7 +217,9 @@ occorrenza, quindi l'utente può annullarle (es.
         (identity-file (or identity-file (emux-host-identity-file host)))
         (port (emux-host-port host))
         (hostname (emux-host-hostname host)))
-    `("ssh"
+    `(,@(when emux-ssh-term
+          (list "env" (concat "TERM=" emux-ssh-term)))
+      "ssh"
       ,@(unless emux-use-system-ssh-config '("-F" "/dev/null"))
       ,@(emux-host-extra-options host)
       ,@(when port (list "-p" (number-to-string port)))
@@ -225,7 +249,7 @@ viene mai modificato."
 Il valore è un simbolo; per ogni backend deve esistere un metodo
 di `emux--terminal-make' specializzato su quel simbolo.  Il
 backend predefinito è `eat' (pacchetto NonGNU ELPA, puro Elisp)."
-  :type '(choice (const :tag "Eat (puro Elisp, NonGNU ELPA)" eat)
+  :type '(choice (const :tag "Eat (Emulation A Terminal)" eat)
                  (symbol :tag "Altro backend")))
 
 (cl-defgeneric emux--terminal-make (backend name command)
